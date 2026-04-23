@@ -736,7 +736,7 @@ void *memscan(void *addr, int c, size_t size)
 {
 	void *p = memchr(addr, c, size);
 
-	return p ? p : (unsigned char *)addr + size;
+	return p ? p : (void *)((unsigned char *)addr + size);
 }
 EXPORT_SYMBOL(memscan);
 #endif
@@ -761,9 +761,10 @@ char *strstr(const char *s1, const char *s2)
 		return (char *)s1;
 	while ((s1 = strchr(s1, *s2)) != NULL) {
 		/*
-		 * If the remaining haystack is shorter than the needle we
-		 * can stop immediately.  All later positions are even
-		 * shorter, so returning NULL here is always correct.
+		 * Guard memcmp against reading past the end of s1: if the
+		 * remaining tail is shorter than the needle there is no
+		 * match here or at any later position, so bail out now.
+		 * strnlen scans at most l2 bytes, so this is O(m), not O(n).
 		 */
 		if (strnlen(s1, l2) < l2)
 			return NULL;
