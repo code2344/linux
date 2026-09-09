@@ -708,18 +708,17 @@ EXPORT_SYMBOL(bcmp);
  *
  * returns the address of the first occurrence of @c, or 1 byte past
  * the area if @c is not found
+ *
+ * Delegates to memchr() so that architectures providing an optimised
+ * memchr (e.g. word-at-a-time or SIMD) automatically benefit here too.
+ * The only semantic difference is the return value when @c is absent:
+ * memchr returns NULL while memscan returns addr+size.
  */
 void *memscan(void *addr, int c, size_t size)
 {
-	unsigned char *p = addr;
+	void *p = memchr(addr, c, size);
 
-	while (size) {
-		if (*p == (unsigned char)c)
-			return (void *)p;
-		p++;
-		size--;
-	}
-  	return (void *)p;
+	return p ? p : (void *)((unsigned char *)addr + size);
 }
 EXPORT_SYMBOL(memscan);
 #endif
@@ -729,17 +728,28 @@ EXPORT_SYMBOL(memscan);
  * strstr - Find the first substring in a %NUL terminated string
  * @s1: The string to be searched
  * @s2: The string to search for
+ *
+ * Uses strchr to skip quickly to the next first-character match rather
+ * than pre-scanning the entire haystack with strlen.  This avoids an
+ * O(n) pass over s1 before the search even starts, which is wasteful
+ * when the needle is found near the beginning or the haystack is long.
  */
 char *strstr(const char *s1, const char *s2)
 {
-	size_t l1, l2;
+	size_t l2;
 
 	l2 = strlen(s2);
 	if (!l2)
 		return (char *)s1;
-	l1 = strlen(s1);
-	while (l1 >= l2) {
-		l1--;
+	while ((s1 = strchr(s1, *s2)) != NULL) {
+		/*
+		 * Guard memcmp against reading past the end of s1: if the
+		 * remaining tail is shorter than the needle there is no
+		 * match here or at any later position, so bail out now.
+		 * strnlen scans at most l2 bytes, so this is O(m), not O(n).
+		 */
+		if (strnlen(s1, l2) < l2)
+			return NULL;
 		if (!memcmp(s1, s2, l2))
 			return (char *)s1;
 		s1++;
